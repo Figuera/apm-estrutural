@@ -1,0 +1,5 @@
+calcularCiclo <-
+  function(receitas, Hpib, Hpet, elast) {
+    H <- c(rep(Hpib, 6), rep(Hpet), rep(Hpib,3))
+    fator <- apply(H, 1, function(h) {
+      ret <- h^ 
