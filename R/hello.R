@@ -1,10 +1,3 @@
-# Hello, world!
-#
-# This is an example function named 'hello'
-# which prints 'Hello, world!'.
-#
-# You can learn more about package authoring with RStudio at:
-
 library(zoo)
 setwd("/home/apoema/gitapps/EstruturalSPE/")
 source("R/process_revenue.R")
@@ -14,25 +7,18 @@ source("R/get_icms.R")
 source("R/filter_pib.R")
 
 rev  <- process_revenue(valor_atualizado)
-Hpib <- filter_pib()
-Hpib$Hpib1 <- c(Hpib$Hpib[-1], NA)
-Hpib$Hpib2 <- c(Hpib$Hpib[-1:-2], rep(NA, 2))
-Hpib$Hpib3 <- c(Hpib$Hpib[-1:-3], rep(NA, 3))
-Hpib$Hpib4 <- c(Hpib$Hpib[-1:-4], rep(NA, 4))
-Hpiba4 <- rep(0, 115)
-for(i in 4:115)
-  Hpiba4[i] <- mean(Hpib$Hpib[(i-3):i])
-Hpib$Hpiba4 <- Hpiba4
-Hpiba6 <- rep(0, 115)
-for(i in 6:115)
-  Hpiba6[i] <- mean(Hpib$Hpib[(i-5):i])
-Hpib$Hpiba6 <- Hpiba6
+h_pib <- filter_pib()
+h_pib$H <- h_pib$trend_pib/h_pib$pib
+h_pib$h_pib1 <- c(h_pib$h_pib[-1], NA)
+h_pib$h_pib4 <- c(h_pib$h_pib[-1:-4], rep(NA, 4))
 
-ggplot(Hpib, aes(x = periodo, y = Hpiba4)) + geom_line() + geom_line(aes(y = Hpib), linetype="dashed")
+gathered <- gather(h_pib, "key", "value", -periodo)
+ggplot(gathered %>% filter(key %in% c("pib", "piba", "trend_pib", "trend_piba")),
+  aes(x = periodo, y = value, color = key)) + geom_line()
 
-rev[,-1] <- log(rev[,-1])
-dados <- left_join(rev, Hpib)
-dados <- zoo(dados[,-1], order.by=dados$periodo)
+rev[, -1] <- log(rev[, -1])
+dados <- left_join(rev, h_pib)
+dados <- zoo(dados[,-1], order.by = dados$periodo)
 
 library(KFAS)
 source("../ElastH/R/build_ssm.R")
@@ -51,14 +37,16 @@ source("../ElastH/R/normality_test.R")
 source("../ElastH/R/R2.R")
 
 library(tidyverse)
+
 search_best_fit <- function(formula, dados, n=50, ...) {
-  best <- list(logLik=-Inf)
-  for(i in 1:n) {
-    init <- c(level = -1, slope = -2, seas = -3, irregular = -0.5, Hpiba4 = -8, Hpib = -8, trend = -8)
-    if(i > 1)
-      init <- c(level = runif(1, -17, 0), slope = runif(1, -17, 0), seas = runif(1, -17, 0), regres = runif(1, -17, 0), irregular = runif(1, -17, 0), Hpiba4 = runif(1, -17, 0))
+  best <- list(logLik = -Inf)
+  for (i in 1:n) {
+    init <- c(level = -1, slope = -2, seas = -3, irregular = -0.5, h_piba4 = -8, h_pib = -8, trend = -8)
+    if (i > 1)
+      init <- c(level = runif(1, -17, 0), slope = runif(1, -17, 0), seas = runif(1, -17, 0),
+        regres = runif(1, -17, 0), irregular = runif(1, -17, 0), h_piba4 = runif(1, -17, 0))
     x <- decompose(formula, data = dados, init = init, ...)
-    if(x$logLik > best$logLik){
+    if (x$logLik > best$logLik) {
       print(x$fit$par)
       best <- x
     }
@@ -66,66 +54,49 @@ search_best_fit <- function(formula, dados, n=50, ...) {
   return(best)
 }
 
-init <- c(level = -1, slope = -2, seas = -3, irregular = -0.5, Hpiba4 = -8, Hpib = -8, trend = -8)
-debugonce(decompose)
-TRT  <- decompose(TRT ~ level() + slope() + seas() + Hpiba4(0), window(dados, start = 2000), init=init)
-TRT  <- search_best_fit(TRT ~ level() + slope(0) + seas() + Hpiba4(0), window(dados, start = 2000), n = 100)
-TRT2  <- search_best_fit(TRT ~ level(0) + slope() + seas() + Hpiba4(0), window(dados, start = 2000), n = 1000)
-ggplot(tibble(), aes(x= 1:1000, y = TRT2$full)) + geom_point() + ylim(c(0, 90))
-coef(TRT)
-TRT$fit
-TRT2$fit
+search_best_model <- function(receita, n = 25) {
+  dados$receita <- dados[, receita, drop = T]
 
-summary_tests(TRT)
-summary_tests(TRT2$best)
-summary_tests(iTRT)
-iTRT$logLik
-TRT2$best$logLik
-debugonce(summary_tests)
-iTRT <- TRT2$best %>% autocreate_interventions()
-coef(iTRT)
-TRT$mod$Q
-TRT$mod$H
-TRT$mod$a1
-TRT$mod$P1
-TRT$varpars
-x <- as_tibble(coef(iTRT))
-x$time <- time(coef(iTRT))
-x$y    <- window(dados$TRT, start = 2000)
-x$x    <- window(dados$Hpib1, start = 2000)
-x$I    <- rep(0, length(x$x))
-x$I[81] <- 1
-ggplot(x, aes(x = time)) + geom_line(aes(y = y)) + geom_line(aes(y = level), linetype="dashed") + geom_line(aes(y = level + sea_trig1 + sea_trig2), linetype="dotted") + geom_line(aes(y = level + sea_trig1 + sea_trig2 + Hpiba4*x), color = "red") + geom_line(aes(y = level + sea_trig1 + sea_trig2 + Hpiba4*x + I.principal.84*I), color = "red", linetype = "dotted")
-ggplot(x, aes(x = time)) + geom_line(aes(y = H))
-TRT$mod$P1
-TRT$mod$a1
-coef(TFP)
-TFP  <- search_best_fit(TFP ~ level() + slope() + seas() + Hpib(0), dados, a1 = list(a1 = NA, P1 = NA), n= 10)
-TFP$fit
-TFP
-testar.ssm(TFP)
-debugonce(autocreate_interventions)
-TFP %<>% autocreate_interventions()
-new_interventions
-second_chance
-ssm$a1
-TRC  <- search_best_fit(TRC ~ level() + slope() + seas() + Hpib(0), dados)
-TI   <- search_best_fit(TI ~ level() + slope() + seas() + Hpib(0), dados)
-TM   <- search_best_fit(TM ~ level() + slope() + seas() + Hpib1(0), dados)
-TGC  <- search_best_fit(TGC ~ level() + slope() + seas() + Hpib1(0), window(dados, start = 2000))
-TRAN <- search_best_fit(TRAN ~ level() + slope() + seas() + Hpib(0), dados)
-ICMS <- search_best_fit(ICMS ~ level() + slope() + seas() + Hpib(0), dados)
+  h0 <- search_best_fit(receita ~ level() + slope() + seas() + h_pib(0), dados, n = n)
+  h1 <- search_best_fit(receita ~ level() + slope() + seas() + h_pib1(0), dados, n = n)
+  ha <- search_best_fit(receita ~ level() + slope() + seas() + h_piba(0), dados, n = n)
 
-log(diag(TRT$model$Q[,,1]))
-str(TRT$mod$a1)
-TRT$logLik
-TRT$model
-str(TRT$fit)
+  aic1 <- summary_tests(h0)$aic
+  aic2 <- summary_tests(h1)$aic
+  aic3 <- summary_tests(ha)$aic
 
-str(TRT)
+  list(h0, h1, ha)[[which.min(c(aic1, aic2, aic3))]]
+}
 
-model <- TRT
+trt <- search_best_model("trt", 25)
+tfp <- search_best_model("tfp", 25)
+trc <- search_best_model("trc", 25)
+ti  <- search_best_model("ti", 25)
+tm  <- search_best_model("tm", 25)
+tran <- search_best_model("tran", 25)
+icms <- search_best_model("ICMS", 25)
 
-x <- autocreate_interventions(TRT)
-coef(x)
-x$mod$Q
+
+coefs <- list(
+  trt  = coef(trt)[nrow(dados), 1],
+  tfp  = coef(tfp)[nrow(dados), 1],
+  trc  = coef(trc)[nrow(dados), 1],
+  ti   = coef(ti)[nrow(dados), 1],
+  tm   = coef(tm)[nrow(dados), 1],
+  tran = coef(tran)[nrow(dados), 1],
+  icms = coef(icms)[nrow(dados), 1]
+)
+
+hiatus_factor <- function(x) {
+  h <- as_tibble(dados)[, names(x), drop = T]
+  H <- 1 / (1 + h)
+
+  (1 - H^x[1])
+}
+
+cycle <- (exp(dados[, c("trt", "tfp", "trc", "ti", "tm", "tran", "icms")]) * sapply(coefs, hiatus_factor)) %>% as.data.frame()
+cycle$total <- rowSums(cycle)
+cycle$periodo <- dados$periodo
+
+nrow(cycle)
+ggplot(cycle, aes(x = 1:101, y = total)) + geom_line()
